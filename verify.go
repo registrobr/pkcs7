@@ -7,6 +7,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -107,6 +108,12 @@ func verifySignatureAtTime(p7 *PKCS7, signer signerInfo, opts x509.VerifyOptions
 	if ee == nil {
 		return errors.New("pkcs7: No certificate for signer")
 	}
+
+	parent := getCertParentFromCerts(p7.Certificates, ee)
+	if ee == nil {
+		return errors.New("pkcs7: no parent for signer")
+	}
+
 	if len(signer.AuthenticatedAttributes) > 0 {
 		// TODO(fullsailor): First check the content type match
 		var (
@@ -155,7 +162,7 @@ func verifySignatureAtTime(p7 *PKCS7, signer signerInfo, opts x509.VerifyOptions
 	if err != nil {
 		return err
 	}
-	return ee.CheckSignature(sigalg, signedData, signer.EncryptedDigest)
+	return checkSignature(sigalg, signedData, signer.EncryptedDigest, ee, parent)
 }
 
 func verifySignature(p7 *PKCS7, signer signerInfo, opts x509.VerifyOptions) (err error) {
@@ -164,6 +171,12 @@ func verifySignature(p7 *PKCS7, signer signerInfo, opts x509.VerifyOptions) (err
 	if ee == nil {
 		return errors.New("pkcs7: No certificate for signer")
 	}
+
+	parent := getCertParentFromCerts(p7.Certificates, ee)
+	if ee == nil {
+		return errors.New("pkcs7: no parent for signer")
+	}
+
 	signingTime := time.Now().UTC()
 	if len(signer.AuthenticatedAttributes) > 0 {
 		// TODO(fullsailor): First check the content type match
@@ -211,7 +224,8 @@ func verifySignature(p7 *PKCS7, signer signerInfo, opts x509.VerifyOptions) (err
 	if err != nil {
 		return err
 	}
-	return ee.CheckSignature(sigalg, signedData, signer.EncryptedDigest)
+
+	return checkSignature(sigalg, signedData, signer.EncryptedDigest, ee, parent)
 }
 
 // GetOnlySigner returns an x509.Certificate for the first signer of the signed
@@ -314,6 +328,8 @@ func getSignatureAlgorithm(digestEncryption, digest pkix.AlgorithmIdentifier) (x
 			return x509.SHA384WithRSA, nil
 		case digest.Algorithm.Equal(OIDDigestAlgorithmSHA512):
 			return x509.SHA512WithRSA, nil
+		case digest.Algorithm.Equal(OIDDigestAlgorithmMD5):
+			return x509.MD5WithRSA, nil
 		default:
 			return -1, fmt.Errorf("pkcs7: unsupported digest %q for encryption algorithm %q",
 				digest.Algorithm.String(), digestEncryption.Algorithm.String())
@@ -362,4 +378,28 @@ func unmarshalAttribute(attrs []attribute, attributeType asn1.ObjectIdentifier, 
 		}
 	}
 	return errors.New("pkcs7: attribute type not in attributes")
+}
+
+func getCertParentFromCerts(certs []*x509.Certificate, current *x509.Certificate) *x509.Certificate {
+	var parent *x509.Certificate
+
+	for _, cert := range certs {
+		if current.Issuer.String() == cert.Subject.String() {
+			parent = cert
+		}
+	}
+	return parent
+}
+
+func checkSignature(algo x509.SignatureAlgorithm, signed []byte, signature []byte, ee, parent *x509.Certificate) error {
+
+	legacy := []x509.SignatureAlgorithm{x509.SHA1WithRSA, x509.MD5WithRSA}
+
+	if !slices.Contains(legacy, algo) {
+		return ee.CheckSignature(algo, signed, signature)
+	}
+
+	//legacy insecure algorithms
+	return ee.CheckSignatureFrom(parent)
+
 }

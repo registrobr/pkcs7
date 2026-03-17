@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -453,6 +454,31 @@ ZARKjbu1TuYQHf0fs+GwID8zeLc2zJL7UzcHFwwQ6Nda9OJN4uPAuC/BKaIpxCLL
 26b24/tRam4SJjqpiq20lynhUrmTtt6hbG3E1Hpy3bmkt2DYnuMFwEx2gfXNcnbT
 wNuvFqc=
 -----END CERTIFICATE-----`)
+
+func TestVerifyRSAMD5(t *testing.T) {
+
+	testFilePath := filepath.Join(".", "testfiles", "signatureMD5.p7s")
+
+	// Check if test file exists
+	if _, err := os.Stat(testFilePath); os.IsNotExist(err) {
+		t.Skipf("Test file %s does not exist", testFilePath)
+	}
+
+	// Open the test file
+	file, err := os.ReadFile(testFilePath)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+
+	p7, err := Parse(file)
+	if err != nil {
+		t.Errorf("Parse encountered unexpected error: %v", err)
+	}
+
+	if err := p7.Verify(); err != nil {
+		t.Errorf("Verify failed with error: %v", err)
+	}
+}
 
 // sign a document with openssl and verify the signature with pkcs7.
 // this uses a chain of root, intermediate and signer cert, where the
