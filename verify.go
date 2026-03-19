@@ -173,9 +173,6 @@ func verifySignature(p7 *PKCS7, signer signerInfo, opts x509.VerifyOptions) (err
 	}
 
 	parent := getCertParentFromCerts(p7.Certificates, ee)
-	if ee == nil {
-		return errors.New("pkcs7: no parent for signer")
-	}
 
 	signingTime := time.Now().UTC()
 	if len(signer.AuthenticatedAttributes) > 0 {
@@ -395,7 +392,7 @@ func checkSignature(algo x509.SignatureAlgorithm, signed []byte, signature []byt
 
 	legacy := []x509.SignatureAlgorithm{x509.SHA1WithRSA, x509.MD5WithRSA}
 
-	if !slices.Contains(legacy, algo) {
+	if !slices.Contains(legacy, algo) || parent == nil {
 		return ee.CheckSignature(algo, signed, signature)
 	}
 
